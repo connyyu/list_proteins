@@ -31,4 +31,4 @@ Using this information, the tool generates a PyMOL script to label each protein 
 ## Author
 
 - **Conny Yu** – [GitHub Profile](https://github.com/connyyu)  
-  _April 2025_
+  Haku series 1.0 _April 2025_
