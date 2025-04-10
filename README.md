@@ -12,7 +12,7 @@ Using this information, the tool generates a PyMOL script to label each protein 
 - Generates a PyMOL script to allow easy navigation and visualisation of protein complexes.
   
 ### Input
-- **PDB code(s)**: separated by space or comma, in upper or lower cases e.g. `9eih 9eii 9eij`.
+- **PDB code(s)**: separated by space or comma, in upper or lower cases e.g. `python haku_list_proteins.py 9eih 9eii 9eij`.
 
 ### Output
 - List all the protein chains in the structural files (protein chains only!).
