@@ -1,15 +1,16 @@
 # List the protein chains and ligands in structural file(s).
 
-This repository contains a Python script that retrieves all downloads and lists all the chains and bound ligands (HETATM) in the structural files (mmCIF format).
+This repository contains a Python script that retrieves and lists all the protein chains and bound ligands in the structural files.
 
-The tool downloads updated mmCIF files from PDBe, parse the files and list the UniProt accessions and names (UniProt ID) of each protein chain.
+The tool downloads updated mmCIF files from PDBe, parse the files and lists the UniProt accessions and names (UniProt ID) of each protein chain.
 
-Using this information, the tool generates a PyMOL script to label each protein chain by creating a selection with its UniProt ID and colouring each protein for visualisation.
+Using this information, the tool generates a PyMOL script to label each protein chain by creating a selection with its UniProt ID and colouring each chain for visualisation.
 
 ## Features
 
 - Provides a quick summary of multiple structural files.
 - Generates a PyMOL script to allow easy navigation and visualisation of protein complexes.
+- Limitation: not compatible with chimeric constructs.
   
 ### Input
 - **PDB code(s)**: separated by space or comma, in upper or lower cases e.g. `python haku_list_proteins.py 9eih 9eii 9eij`.
@@ -31,4 +32,4 @@ Using this information, the tool generates a PyMOL script to label each protein 
 ## Author
 
 - **Conny Yu** – [GitHub Profile](https://github.com/connyyu)  
-  Haku series 1.0 _April 2025_
+  Haku series 1.0 _May 2025_
