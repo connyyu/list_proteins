@@ -31,4 +31,4 @@ The tool downloads updated mmCIF files from PDBe, parse the files and lists the 
 ## Author
 
 - **Conny Yu** – [GitHub Profile](https://github.com/connyyu)  
-  Haku series 1.0 _May 2025_
+  Haku series 1.1 _May 2025_
