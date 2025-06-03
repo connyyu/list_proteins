@@ -75,86 +75,145 @@ def fetch_uniprot_id(uniprot_ac):
         return data.get('uniProtkbId', None)
     return None
 
-def parse_uniprot_mapping(cif_file):
+def parse_uniprot_mapping(cif_file, chains_to_check=None):
     uniprot_mapping = {}
     uniprot_ids = []
     chain_mapping = {}
-    seen_chain_ids = {}  # To track which chains are associated with each UniProt accession
-    
+
+    fallback_accession = None
+    fallback_ID = None
+    fallback_chain = None
+
     with open(cif_file, 'r') as f:
         lines = f.readlines()
 
+    # Scan for fallbacks
+    for i, line in enumerate(lines):
+        line = line.strip()
+        if line.startswith('_struct_ref.pdbx_db_accession'):
+            fallback_accession = (line.split()[1] if len(line.split()) > 1
+                                  else lines[i + 1].strip().split()[0])
+        elif line.startswith('_struct_ref.db_code'):
+            fallback_ID = (line.split()[1] if len(line.split()) > 1
+                           else lines[i + 1].strip().split()[0])
+        elif line.startswith('_struct_ref_seq.pdbx_strand_id'):
+            # Try to get chain from current line first
+            parts = line.split()
+            if len(parts) > 1:
+                fallback_chain_candidate = parts[1]
+                if len(fallback_chain_candidate) == 1 and fallback_chain_candidate.isalnum():
+                    fallback_chain = fallback_chain_candidate
+            else:
+                # If not found on current line, look at next lines
+                k = i + 1
+                while k < len(lines):
+                    next_line = lines[k].strip()
+                    if not next_line or next_line.startswith('_'):
+                        break  # End of this data block or new header
+                    fallback_chain_candidate = next_line.split()[0]
+                    if len(fallback_chain_candidate) == 1 and fallback_chain_candidate.isalnum():
+                        fallback_chain = fallback_chain_candidate
+                        break
+                    k += 1
+
     i = 0
     process_sifts = False
+    sifts_mapping = {}
+    sifts_chain_mapping = {}
+
     while i < len(lines):
         line = lines[i].strip()
+
         if line.startswith('_struct_ref.pdbx_db_accession'):
-            found_valid_line = False
             j = i + 1
-            while j < len(lines):
-                if 'UNP' in lines[j]:  # Check if 'UNP' is in the line
-                    parts = lines[j].strip().split()
-                    if 'UNP' in parts and parts[1] == 'UNP':  # Ensure 'UNP' is in the expected position
-                        for part in parts:
-                            if len(part) == 6:
-                                uniprot_accession = part  # Get UniProt accession
-                                uniprot_id = parts[2]  # Get UniProt ID
-                                entity_id = parts[0]  # Get entity_id
-                                if entity_id not in uniprot_mapping:
-                                    uniprot_mapping[entity_id] = uniprot_accession
-                                    uniprot_ids.append((entity_id, uniprot_id))
-                                    found_valid_line = True
-                j += 1
-            if not found_valid_line:
-                for k in range(len(lines)):
-                    if lines[k].startswith('_struct_ref.entity_id'):
-                        entity_id = lines[k].strip().split()[-1]
-                    if lines[k].startswith('_struct_ref.pdbx_db_accession'):
-                        uniprot_accession = lines[k].strip().split()[-1]
-                    if lines[k].startswith('_struct_ref.db_code'):
-                        uniprot_id = lines[k].strip().split()[-1]
-                if entity_id and uniprot_accession:
-                    if entity_id not in uniprot_mapping:
+            while j < len(lines) and not lines[j].startswith('loop_') and lines[j].strip():
+                parts = lines[j].strip().split()
+                if 'UNP' in parts and len(parts) > 2:
+                    entity_id = parts[0]
+                    uniprot_id = parts[2]
+                    uniprot_accession = None
+                    for part in parts:
+                        if len(part) >= 6 and '-' not in part:
+                            uniprot_accession = part
+                            break
+                    if uniprot_accession:
                         uniprot_mapping[entity_id] = uniprot_accession
                         uniprot_ids.append((entity_id, uniprot_id))
+                j += 1
+            i = j
+            continue
+
         elif line.startswith('_struct_ref_seq.align_id'):
-            i += 1  # Skip the header line
-            while i < len(lines) and not lines[i].strip().startswith('loop_'):
-                parts = lines[i].strip().split()
+            i += 1
+            while i < len(lines):
+                next_line = lines[i].strip()
+                if not next_line or next_line.startswith(('loop_', '#')):
+                    break
+                parts = next_line.split()
                 if len(parts) > 3:
-                    entity_id = parts[1]
-                    chain_id = parts[3]
-                    if entity_id in uniprot_mapping:
-                        if entity_id not in chain_mapping:
-                            chain_mapping[entity_id] = set()  # Initialize as a set to avoid duplicates
-                        chain_mapping[entity_id].add(chain_id)  # Add the chain ID to the set of chains for this entity ID
+                    entity_id, chain_id = parts[1], parts[3]
+                    chain_mapping.setdefault(entity_id, set()).add(chain_id)
                 i += 1
             continue
-        # Update the UniProt ID and AC with the new mappings in SIFTS
+
         elif line.startswith('_pdbx_sifts_unp_segments.identity'):
             process_sifts = True
-        elif process_sifts and line.startswith('loop'):
-            process_sifts = False
-        elif process_sifts:
-            parts = line.strip().split()
-            if len(parts) > 3:
-                entity_id = parts[0]
-                uniprot_accession = parts[2]
-                if len(uniprot_accession) == 6 and entity_id in uniprot_mapping:
-                    uniprot_mapping[entity_id] = uniprot_accession
-                    new_uniprot_id = fetch_uniprot_id(uniprot_accession)
-                    if new_uniprot_id:
-                        # Update existing uniprot_id for the entity_id
-                        for idx, (eid, uid) in enumerate(uniprot_ids):
-                            if eid == entity_id:
-                                uniprot_ids[idx] = (entity_id, new_uniprot_id)
-                                break  # Stop after finding the match
 
+        elif process_sifts:
+            if line.startswith(('loop_', '#')):
+                process_sifts = False
+            elif line:
+                parts = line.split()
+                if len(parts) > 3:
+                    entity_id, chain_id, sifts_accession = parts[0], parts[1], parts[2]
+                    if len(sifts_accession) >= 6 and '-' not in sifts_accession:
+                        sifts_mapping[entity_id] = sifts_accession
+                        sifts_chain_mapping.setdefault(entity_id, set()).add(chain_id)
         i += 1
+
+    # Use fallback if no mapping found
+    if not uniprot_mapping:
+        # Choose fallback_entity (prefer numeric from existing mappings or fallback to '1')
+        if sifts_mapping:
+            fallback_entity = sorted(sifts_mapping.keys())[0]
+        elif chain_mapping:
+            fallback_entity = sorted(chain_mapping.keys())[0]
+        else:
+            fallback_entity = "1"
     
-    chain_mapping = {entity_id: sorted(list(chains)) for entity_id, chains in chain_mapping.items()}
+        # Assign fallback_accession, fallback_ID as before
+        uniprot_mapping[fallback_entity] = fallback_accession
+        uniprot_ids.append((fallback_entity, fallback_ID))
     
-    return uniprot_mapping, uniprot_ids, chain_mapping
+        # Assign all chains for that entity, if any, else fallback_chain if available
+        chains_for_entity = chain_mapping.get(fallback_entity)
+        if chains_for_entity:
+            chain_mapping[fallback_entity] = chains_for_entity
+        else:
+            chain_mapping[fallback_entity] = set([fallback_chain] if fallback_chain else [])
+
+    # Final reconciliation:
+    final_uniprot_mapping = {}
+    final_uniprot_ids = []
+    final_chain_mapping = {}
+
+    for entity in uniprot_mapping:
+        original_ac = uniprot_mapping[entity]
+        uniprot_id = next((uid for eid, uid in uniprot_ids if eid == entity), None)
+        sifts_ac = sifts_mapping.get(entity, None)
+
+        # Use SIFTS AC if available; else original AC
+        final_ac = sifts_ac if sifts_ac else original_ac
+
+        # Use only original chains — NO merging with SIFTS chains
+        chains_orig = chain_mapping.get(entity, set())
+        final_chains = sorted(list(chains_orig))
+
+        final_uniprot_mapping[entity] = final_ac
+        final_uniprot_ids.append((entity, uniprot_id))
+        final_chain_mapping[entity] = final_chains
+
+    return final_uniprot_mapping, final_uniprot_ids, final_chain_mapping
 
 def check_chimera(table_data):
     chain_uniprot_map = defaultdict(set)
