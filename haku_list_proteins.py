@@ -75,7 +75,7 @@ def fetch_uniprot_id(uniprot_ac):
         return data.get('uniProtkbId', None)
     return None
 
-def parse_uniprot_mapping(cif_file, chains_to_check=None):
+def parse_uniprot_mapping(cif_file):
     uniprot_mapping = {}
     uniprot_ids = []
     chain_mapping = {}
@@ -127,16 +127,25 @@ def parse_uniprot_mapping(cif_file, chains_to_check=None):
         if line.startswith('_struct_ref.pdbx_db_accession'):
             j = i + 1
             while j < len(lines) and not lines[j].startswith('loop_') and lines[j].strip():
-                parts = lines[j].strip().split()
-                if 'UNP' in parts and len(parts) > 2:
+                line_content = lines[j].strip()
+                
+                # Skip lines that are part of multi-line sequences (start with ; or are continuation)
+                if line_content.startswith(';') or line_content.endswith(';'):
+                    if line_content.startswith(';') and not line_content.endswith(';'):
+                        j += 1
+                        while j < len(lines):
+                            if lines[j].strip().endswith(';'):
+                                break
+                            j += 1
+                    j += 1
+                    continue
+                parts = line_content.split()
+                if 'UNP' in parts and len(parts) >= 4:  # Need at least entity_id, UNP, db_code, accession
                     entity_id = parts[0]
                     uniprot_id = parts[2]
-                    uniprot_accession = None
-                    for part in parts:
-                        if len(part) >= 6 and '-' not in part:
-                            uniprot_accession = part
-                            break
-                    if uniprot_accession:
+                    uniprot_accession = parts[3]
+                    # Validate that the accession looks like a UniProt accession
+                    if len(uniprot_accession) >= 6 and '-' not in uniprot_accession and '_' not in uniprot_accession:
                         uniprot_mapping[entity_id] = uniprot_accession
                         uniprot_ids.append((entity_id, uniprot_id))
                 j += 1
@@ -197,8 +206,8 @@ def parse_uniprot_mapping(cif_file, chains_to_check=None):
     final_uniprot_ids = []
     final_chain_mapping = {}
 
-    for entity in uniprot_mapping:
-        original_ac = uniprot_mapping[entity]
+    for entity in chain_mapping:
+        original_ac = uniprot_mapping.get(entity, None)
         uniprot_id = next((uid for eid, uid in uniprot_ids if eid == entity), None)
         sifts_ac = sifts_mapping.get(entity, None)
 
@@ -206,12 +215,16 @@ def parse_uniprot_mapping(cif_file, chains_to_check=None):
         final_ac = sifts_ac if sifts_ac else original_ac
 
         # Use only original chains — NO merging with SIFTS chains
-        chains_orig = chain_mapping.get(entity, set())
+        chains_orig = chain_mapping[entity]
         final_chains = sorted(list(chains_orig))
 
         final_uniprot_mapping[entity] = final_ac
         final_uniprot_ids.append((entity, uniprot_id))
         final_chain_mapping[entity] = final_chains
+
+        ### debug ###
+        #print("UniProt IDs:", uniprot_ids)
+        #print("Entities:", list(uniprot_mapping.keys()))
 
     return final_uniprot_mapping, final_uniprot_ids, final_chain_mapping
 
