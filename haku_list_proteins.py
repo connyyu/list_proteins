@@ -77,7 +77,7 @@ def fetch_uniprot_id(uniprot_ac):
 
 def parse_uniprot_mapping(cif_file):
     uniprot_mapping = {}
-    uniprot_ids = []
+    uniprot_ids = {}
     chain_mapping = {}
     ref_id_to_entity_id = {}
 
@@ -119,6 +119,9 @@ def parse_uniprot_mapping(cif_file):
     process_sifts = False
     sifts_mapping = {}
     sifts_chain_mapping = {}
+    struct_ref_count = 0
+    struct_ref_seq_count = 0
+    sifts_count = 0
 
     while i < len(lines):
         line = lines[i].strip()
@@ -161,6 +164,7 @@ def parse_uniprot_mapping(cif_file):
                         break
 
                     parts = data_line.split()
+                    struct_ref_count += 1
 
                     if (None not in (ref_id_idx, db_name_idx, db_code_idx, entity_id_idx, accession_idx) and
                         len(parts) > max(ref_id_idx, db_name_idx, db_code_idx, entity_id_idx, accession_idx)):
@@ -175,13 +179,12 @@ def parse_uniprot_mapping(cif_file):
 
                             if len(uniprot_accession) >= 6 and '-' not in uniprot_accession and '_' not in uniprot_accession:
                                 uniprot_mapping[entity_id] = uniprot_accession
-                                uniprot_ids.append((entity_id, uniprot_id))
+                                uniprot_ids[entity_id] = uniprot_id  # Store as dict for easier lookup
 
                     data_line_idx += 1
                 i = data_line_idx
                 continue
 
-        # struct_ref_seq processing:
         elif line.startswith('_struct_ref_seq.align_id'):
             i += 1
             while i < len(lines):
@@ -190,11 +193,14 @@ def parse_uniprot_mapping(cif_file):
                     break
                 parts = next_line.split()
                 if len(parts) > 8:
+                    struct_ref_seq_count += 1
                     ref_id = parts[1]
                     chain_id = parts[3]
                     uniprot_accession = parts[8]
 
                     entity_id = ref_id_to_entity_id.get(ref_id)
+                    if entity_id is None:
+                        entity_id = ref_id
 
                     if entity_id:
                         chain_mapping.setdefault(entity_id, set()).add(chain_id)
@@ -203,6 +209,8 @@ def parse_uniprot_mapping(cif_file):
                             '-' not in uniprot_accession and 
                             '_' not in uniprot_accession):
                             uniprot_mapping[entity_id] = uniprot_accession
+                            if entity_id not in uniprot_ids:
+                                uniprot_ids[entity_id] = None
                 i += 1
             continue
 
@@ -215,6 +223,7 @@ def parse_uniprot_mapping(cif_file):
             elif line:
                 parts = line.split()
                 if len(parts) > 3:
+                    sifts_count += 1
                     entity_id, chain_id, sifts_accession = parts[0], parts[1], parts[2]
                     if len(sifts_accession) >= 6 and '-' not in sifts_accession:
                         sifts_mapping[entity_id] = sifts_accession
@@ -223,39 +232,62 @@ def parse_uniprot_mapping(cif_file):
         i += 1
 
     # Use fallback if no mapping found
-    if not uniprot_mapping:
-        if sifts_mapping:
-            fallback_entity = sorted(sifts_mapping.keys())[0]
-        elif chain_mapping:
-            fallback_entity = sorted(chain_mapping.keys())[0]
-        else:
-            fallback_entity = "1"
+    if not uniprot_mapping and not sifts_mapping:
+        fallback_entity = "1"
 
-        uniprot_mapping[fallback_entity] = fallback_accession
-        uniprot_ids.append((fallback_entity, fallback_ID))
+        if fallback_accession:
+            uniprot_mapping[fallback_entity] = fallback_accession
+            uniprot_ids[fallback_entity] = fallback_ID
 
-        chains_for_entity = chain_mapping.get(fallback_entity)
-        if chains_for_entity:
-            chain_mapping[fallback_entity] = chains_for_entity
-        else:
-            chain_mapping[fallback_entity] = set([fallback_chain] if fallback_chain else [])
+            chains_for_entity = chain_mapping.get(fallback_entity)
+            if chains_for_entity:
+                chain_mapping[fallback_entity] = chains_for_entity
+            else:
+                chain_mapping[fallback_entity] = set([fallback_chain] if fallback_chain else [])
 
-    # Final reconciliation
+    # Final reconciliation - Use SIFTS chains only if struct_ref_seq chains are NOT available
     final_uniprot_mapping = {}
     final_uniprot_ids = []
     final_chain_mapping = {}
 
-    for entity in chain_mapping:
+    all_entities = set(chain_mapping.keys()) | set(uniprot_mapping.keys()) | set(sifts_mapping.keys()) | set(sifts_chain_mapping.keys())
+    
+    for entity in all_entities:
         original_ac = uniprot_mapping.get(entity, None)
-        uniprot_id = next((uid for eid, uid in uniprot_ids if eid == entity), None)
+        uniprot_id = uniprot_ids.get(entity, None)
         sifts_ac = sifts_mapping.get(entity, None)
 
         final_ac = sifts_ac if sifts_ac else original_ac
-        final_chains = sorted(list(chain_mapping[entity]))
 
-        final_uniprot_mapping[entity] = final_ac
-        final_uniprot_ids.append((entity, uniprot_id))
-        final_chain_mapping[entity] = final_chains
+        chains_from_struct_ref_seq = list(chain_mapping.get(entity, set()))
+        chains_from_sifts = list(sifts_chain_mapping.get(entity, set()))
+        
+        if chains_from_struct_ref_seq:
+            final_chains = sorted(chains_from_struct_ref_seq)
+        elif chains_from_sifts:
+            final_chains = sorted(chains_from_sifts)
+        else:
+            final_chains = []
+        
+        if final_ac:
+            final_uniprot_mapping[entity] = final_ac
+
+            uid = uniprot_ids.get(entity)
+            if uid is None and fallback_ID:
+                uid = fallback_ID
+        
+            final_uniprot_ids.append((entity, uid))
+            final_chain_mapping[entity] = final_chains
+
+    for entity, chains in final_chain_mapping.items():
+        uid = None
+        for ent, uniprot_id in final_uniprot_ids:
+            if ent == entity:
+                uid = uniprot_id
+                break
+        if fallback_chain and uid == fallback_ID:
+            if chains and (fallback_chain not in chains):
+                final_chain_mapping[entity] = [fallback_chain]
 
     return final_uniprot_mapping, final_uniprot_ids, final_chain_mapping
 
