@@ -9,6 +9,7 @@ The tool downloads updated mmCIF files from PDBe, parse the files and lists the 
 - Provides a quick summary of multiple structural files.
 - Generates a PyMOL script to allow easy navigation and visualisation of protein complexes.
 - Limitation: not compatible with chimeric and non-protein constructs.
+- Independent Python script to run as a PyMOL plugin.
   
 ### Input
 - **PDB code(s)**: separated by space or comma, in upper or lower cases e.g. `python haku_list_proteins.py 9eih 9eii 9eij`.
@@ -22,6 +23,14 @@ The tool downloads updated mmCIF files from PDBe, parse the files and lists the 
 ## Example Usage
 
 <img src="https://github.com/user-attachments/assets/68eb1d63-4635-45cc-8a09-40ce0af048b9" alt="Example Screenshot" width="600"/>
+
+## PyMOL plugin
+
+In PyMOL 3.0, Plugin -> Plugin Manager -> Install from PyMOLWiki or any URL:<br>
+https://github.com/connyyu/list_proteins/blob/main/sifts.py
+
+Usage: sifts <object_name> [<object_name2> ...]<br>
+<object_name> should match with PDB identifier.
 
 ## Prerequisites
 
