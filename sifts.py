@@ -84,7 +84,7 @@ def merge_dbref_lines(dbref_lines):
 def sifts(pdb_list="", _self=None):
     obj_names = pdb_list.split()
     
-    if not obj_names:  # Also change this check
+    if not obj_names:
         print("Usage: sifts <object_name> [<object_name2> ...]")
         print("<object_name> should match with PDB identifier.")
         return
